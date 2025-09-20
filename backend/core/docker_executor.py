@@ -29,15 +29,30 @@ def create_new_container(file_path, language, use_gvisor=False):
     Create a new container for executing the function.
     """
     container_name = f"lambda_{uuid.uuid4().hex}"
-    base_image = "lambda_base_python" if language == "python" else "lambda_base_node"
+    if language == "python":
+        base_image = "lambda_base_python"
+    elif language == "javascript" or language == "node":
+        base_image = "lambda_base_node"
+    elif language == "verilog":
+        base_image = "lambda_base_verilog"
+    else:
+        base_image = "lambda_base_python"  # default fallback
+    
     file_ext = file_path.split('.')[-1]
     container_path = f"/app/code.{file_ext}"
     
     try:
         if use_gvisor:
+            if language == "verilog":
+                command = ["iverilog", "-o", "/app/output", container_path, "&&", "/app/output"]
+            elif language == "python":
+                command = ["python3", container_path]
+            else:
+                command = ["node", container_path]
+                
             container = client.containers.run(
                 image=base_image,
-                command=["python3", container_path] if language == "python" else ["node", container_path],
+                command=command,
                 volumes={os.path.abspath(file_path): {"bind": container_path, "mode": "ro"}},
                 name=container_name,
                 network_disabled=True,
@@ -47,9 +62,16 @@ def create_new_container(file_path, language, use_gvisor=False):
                 runtime='runsc'
             )
         else:
+            if language == "verilog":
+                command = ["/bin/bash", "-c", f"iverilog -o /app/output {container_path} && /app/output"]
+            elif language == "python":
+                command = ["python3", container_path]
+            else:
+                command = ["node", container_path]
+                
             container = client.containers.run(
                 image=base_image,
-                command=["python3", container_path] if language == "python" else ["node", container_path],
+                command=command,
                 volumes={os.path.abspath(file_path): {"bind": container_path, "mode": "ro"}},
                 name=container_name,
                 network_disabled=True,
@@ -64,7 +86,15 @@ def create_new_container(file_path, language, use_gvisor=False):
 
 def run_function_in_container(function_id, language, timeout, use_gvisor=False):
     code = get_function_code(function_id)
-    file_ext = "py" if language == "python" else "js"
+    if language == "python":
+        file_ext = "py"
+    elif language == "javascript" or language == "node":
+        file_ext = "js"
+    elif language == "verilog":
+        file_ext = "v"
+    else:
+        file_ext = "py"  # default fallback
+        
     temp_file_path = f"/tmp/temp_{uuid.uuid4().hex}.{file_ext}"
 
     with open(temp_file_path, "w") as f:
